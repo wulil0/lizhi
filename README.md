@@ -14,9 +14,9 @@ python3 -m http.server 8765
 
 ## 部署
 
-线上地址：<https://wulill.bond>，托管在 GitHub Pages（仓库 `wulil0/lizhi`，`main` 分支根目录）。推送到 `main` 后约一分钟自动更新。
+线上地址：<https://lizhi.wulill.bond>，托管在 GitHub Pages（仓库 `wulil0/lizhi`，`main` 分支根目录）。推送到 `main` 后约一分钟自动更新。
 
-域名的 DNS 在 Cloudflare：根域名 `wulill.bond` 用 4 条 A 记录指向 GitHub Pages（`185.199.108.153`、`185.199.109.153`、`185.199.110.153`、`185.199.111.153`），`www` 用 CNAME 指向 `wulil0.github.io`；代理状态设为“仅 DNS”（灰色云朵），让 GitHub 签发 HTTPS 证书。
+域名 DNS 在 Cloudflare：`lizhi` 子域名用一条 CNAME 指向 `wulil0.github.io`，代理状态设为“仅 DNS”（灰色云朵），由 GitHub 签发 HTTPS 证书。根域名 `wulill.bond` 是另一个站点，与本仓库无关。
 
 ## 页面
 
@@ -42,7 +42,7 @@ python3 -m http.server 8765
 | `js/data.js` | **全部内容数据**：专辑、地点、年表。改内容只改这个文件 |
 | `js/main.js` | 渲染与交互 |
 | `assets/covers/` | 专辑封面，文件名 = `data.js` 里专辑的 `id` + `.jpg`（最长边 800px） |
-| `CNAME` | GitHub Pages 自定义域名（`wulill.bond`） |
+| `CNAME` | GitHub Pages 自定义域名（`lizhi.wulill.bond`） |
 | `.gitignore` | 不入库的本地文件 |
 | `.claude/launch.json` | Claude Code 预览服务器配置 |
 
