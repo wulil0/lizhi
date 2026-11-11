@@ -22,7 +22,7 @@ python3 -m http.server 8765
 deploy/deploy.sh
 ```
 
-脚本用 rsync 把站点文件同步到服务器的 `/var/www/lizhi`（不上传 `.git`、`.claude`、`README.md`、`deploy/`）。服务器地址和密钥可以用环境变量 `LIZHI_SERVER`、`LIZHI_KEY` 覆盖。
+脚本用 rsync 把站点文件同步到服务器的 `/var/www/lizhi`（不上传 `.git`、`.claude`、`README.md`、`deploy/`、`docs/`、`tests/`）。服务器地址和密钥可以用环境变量 `LIZHI_SERVER`、`LIZHI_KEY` 覆盖。
 
 - **nginx**：配置见 `deploy/lizhi.wulill.bond.nginx.conf`，在服务器上的位置是 `/etc/nginx/sites-available/lizhi.wulill.bond`，软链接到 `sites-enabled`。HTTP 自动跳转 HTTPS；封面缓存一周，HTML/CSS/JS 每次都向服务器校验。
 - **DNS**：Cloudflare 上的通配符记录 `*.wulill.bond` 已经指向这台服务器并开启代理，`lizhi` 子域名不需要单独的记录。源站证书沿用 `wulill.bond` 的那张。
@@ -41,6 +41,8 @@ deploy/deploy.sh
 
 - **专辑详情弹层**（唱片页、首页、年表通用）：← → 方向键或按钮翻上一张 / 下一张，顺序跟当前页面卡片一致；Esc、点背景或 × 关闭，关闭后焦点回到原卡片。
 - **可分享链接**：唱片页打开某张专辑时，地址会变成 `albums.html#<id>`（如 `#2014-1701`），直接访问会自动打开那张；`albums.html#live` 直接筛选现场专辑。
+- **动画**：页面之间淡入淡出转场（支持 View Transitions 的浏览器）；首页大字从下往上印出来、封面像发牌一样依次落下、红章最后盖上；卡片错落出现，悬停时像纸片一样被抬起；地图路线依次描出、城市点逐个弹出，选中的城市路线变成实线；年表遮挡条像盖章一样刷黑；弹层开合都有过渡。
+- **播放器**（默认关闭）：底部播放条 + 滚动歌词面板，支持 FLAC 无损（浏览器播不了时自动退回 MP3），音源来自对象存储（OBS）。打开方法、目录约定和接口见 [docs/player.md](docs/player.md)。
 - 所有可点元素都支持键盘操作，有清晰的焦点框；系统开启“减少动态效果”时，入场动画和跑马灯会关闭。
 
 ## 目录结构
@@ -51,6 +53,11 @@ deploy/deploy.sh
 | `css/style.css` | 全站样式 |
 | `js/data.js` | **全部内容数据**：专辑、地点、年表。改内容只改这个文件 |
 | `js/main.js` | 渲染与交互 |
+| `js/config.js` | 播放器配置（默认关闭） |
+| `js/lrc.js` | LRC 歌词解析 |
+| `js/player.js` | 播放器：音源接口、播放核心、播放条与歌词面板 |
+| `docs/` | 开发文档，索引见 [docs/README.md](docs/README.md) |
+| `tests/` | 单元测试、合成测试数据和本地测试工具，说明见 [tests/README.md](tests/README.md)；不部署 |
 | `assets/covers/` | 专辑封面，文件名 = `data.js` 里专辑的 `id` + `.jpg`（最长边 800px） |
 | `deploy/deploy.sh` | 部署脚本：同步站点到服务器 |
 | `deploy/lizhi.wulill.bond.nginx.conf` | 服务器上的 nginx 站点配置（留档） |
@@ -63,7 +70,7 @@ deploy/deploy.sh
 - **收录曲目**：按网盘里各专辑文件夹的音频文件名整理，**不是原专辑曲序**，页面上也写明了这一点。
 - **封面**：来自同一网盘文件夹中的 `Cover.jpg`，压缩后存入 `assets/covers/`。
 - **年表**：依据维基百科“李志 (歌手)”条目和上面那张专辑表。
-- 网站**不收录歌词，不提供音频播放或下载**。封面和作品的版权归原作者所有。
+- 仓库和网站**不含任何音频或歌词**。播放器只是接口，默认关闭；接入音源前请自行确认版权。封面和作品的版权归原作者所有。
 
 ### 添加一张专辑
 

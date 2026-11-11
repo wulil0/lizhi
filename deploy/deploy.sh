@@ -6,7 +6,7 @@ SERVER="${LIZHI_SERVER:-root@111.91.21.52}"
 KEY="${LIZHI_KEY:-$HOME/.ssh/id_ed25519}"
 rsync -az --delete \
   --exclude='.git' --exclude='.claude' --exclude='.gitignore' --exclude='.DS_Store' \
-  --exclude='README.md' --exclude='deploy' \
+  --exclude='README.md' --exclude='deploy' --exclude='docs' --exclude='tests' \
   -e "ssh -i $KEY" ./ "$SERVER:/var/www/lizhi/"
 ssh -i "$KEY" "$SERVER" 'chown -R www-data:www-data /var/www/lizhi'
 echo "已部署：https://lizhi.wulill.bond"

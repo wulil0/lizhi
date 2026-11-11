@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "albums": {
+    "2004-jinji": {
+      "tracks": [
+        {
+          "n": 1,
+          "title": "曲名",
+          "audio": { "flac": "audio/2004-jinji/01.flac", "mp3": "audio/2004-jinji/01.mp3" },
+          "lyrics": "lyrics/2004-jinji/01.lrc",
+          "duration": 215
+        },
+        {
+          "n": 2,
+          "title": "只有 MP3、没有歌词的一首",
+          "audio": "audio/2004-jinji/02.mp3"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "albums": {
+    "2004-jinji": {
+      "tracks": [
+        { "n": 1, "title": "测试音轨一（FLAC + MP3）", "audio": { "flac": "audio/2004-jinji/01.flac", "mp3": "audio/2004-jinji/01.mp3" }, "lyrics": "lyrics/2004-jinji/01.lrc", "duration": 20 },
+        { "n": 2, "title": "测试音轨二（仅 FLAC，歌词带 offset）", "audio": { "flac": "audio/2004-jinji/02.flac" }, "lyrics": "lyrics/2004-jinji/02.lrc", "duration": 15 },
+        { "n": 3, "title": "测试音轨三（FLAC 缺失，自动退回 MP3）", "audio": { "flac": "audio/2004-jinji/03-missing.flac", "mp3": "audio/2004-jinji/03.mp3" }, "duration": 12 }
+      ]
+    }
+  }
+}
