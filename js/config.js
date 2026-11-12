@@ -1,12 +1,12 @@
-// 播放器配置。默认关闭：enabled 为 false 时，页面上不会出现任何播放相关的界面。
+// 播放器配置。已接入 OBS 私有桶：曲目清单与音频都经 /api/sign 换签名地址后播放。
 // 接口说明、曲目清单格式和对象存储（OBS）设置见 docs/player.md。
 window.LIZHI_PLAYER = {
-  enabled: false,
+  enabled: true,
 
   // 对象存储的访问地址，以 / 结尾。华为云 OBS 的格式：
   //   https://<桶名>.obs.<区域>.myhuaweicloud.com/
   // 也可以是绑定到桶上的自定义域名，或同站的相对路径（如 "media/"）。
-  baseUrl: "",
+  baseUrl: "https://wulill26.obs.cn-north-4.myhuaweicloud.com/",
 
   // 曲目清单在桶里的路径（相对 baseUrl）
   manifest: "manifest.json",
@@ -14,10 +14,8 @@ window.LIZHI_PLAYER = {
   // 同一首歌有多种格式时的优先顺序；浏览器播不了的格式会自动跳过
   prefer: ["flac", "mp3"],
 
-  // 私有桶：提供一个函数，把对象路径换成带签名的临时地址，例如
-  //   sign: async (key) => (await fetch("/api/sign?key=" + encodeURIComponent(key))).text()
-  // 为 null 时直接拼接 baseUrl + key（适用于公共读的桶）。
-  sign: null,
+  // 私有桶：把对象路径换成带签名的临时地址（签名服务只签李志/ 前缀与曲目清单）。
+  sign: async (key) => key === "manifest.json" ? "/api/manifest" : (await fetch("/api/sign?key=" + encodeURIComponent(key))).text(),
 };
 
 // 本地调试：在浏览器控制台执行

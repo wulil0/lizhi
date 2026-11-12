@@ -23,7 +23,15 @@
       <a class="logo" href="index.html">李志<small>LI ZHI · 南京</small></a>
       <nav class="nav" aria-label="主导航">${NAV.map(([k, t, h]) => `<a href="${h}"${k === page ? ' aria-current="page"' : ""}>${t}</a>`).join("")}</nav>
     </div></div>
-    <div class="dateline"><div class="wrap"><span>非官方乐迷站 · 第 ${ALBUMS.length} 张唱片仍在播放</span><span>N 32°03′ E 118°47′</span></div></div>`;
+    <div class="dateline"><div class="wrap"><span>非官方乐迷站 · 第 ${ALBUMS.length} 张唱片仍在播放</span><span>N 32°03′ E 118°47′</span></div></div>
+    <div class="searchbar"><div class="wrap">
+      <div class="search-box">
+        <span class="kicker">搜歌</span>
+        <input id="search-input" type="search" placeholder="歌名，或者一句歌词…" aria-label="搜索歌曲或歌词" autocomplete="off" spellcheck="false" enterkeyhint="search">
+        <button id="search-clear" class="search-clear" aria-label="清空搜索" hidden>×</button>
+      </div>
+      <div id="search-results" class="search-results" hidden></div>
+    </div></div>`;
 
     const footer = () => `
     <div class="wrap">

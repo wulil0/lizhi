@@ -50,6 +50,7 @@ deploy/deploy.sh
 
 脚本先运行 `node scripts/build.js`，再用 rsync 把 `dist/` 同步到服务器的 `/var/www/lizhi`。服务器地址和密钥可以用环境变量 `LIZHI_SERVER`、`LIZHI_KEY` 覆盖。
 
+- **歌词与搜索索引**：`lrc/`（歌词文件）与 `search-index.json`（搜索索引）由歌词管线在服务器端维护，不在 `dist/` 里；`deploy.sh` 用 `--exclude` 排除它们，部署不会删掉。不要把它们加进构建产物。
 - **nginx**：配置见 `deploy/lizhi.wulill.bond.nginx.conf`，在服务器上的位置是 `/etc/nginx/sites-available/lizhi.wulill.bond`，软链接到 `sites-enabled`。HTTP 自动跳转 HTTPS；HTML 每次向服务器校验，带版本号的 CSS/JS/字体缓存一年，封面缓存一周；自定义 404 页；隐藏 nginx 版本；带 CSP、HSTS 等安全头。
 - **DNS**：Cloudflare 上的通配符记录 `*.wulill.bond` 已经指向这台服务器并开启代理，`lizhi` 子域名不需要单独的记录。源站证书沿用 `wulill.bond` 的那张。
 - 改了 nginx 配置后：上传到上面那个路径，执行 `nginx -t && systemctl reload nginx`。

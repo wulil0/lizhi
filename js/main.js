@@ -1,7 +1,7 @@
 // 页面交互：按 <body data-page> 渲染 / 绑定各页内容。模板在 render.js，数据在 data.js。
 // 构建后的页面已经预渲染好（容器带 data-ssr），这里只补交互；直接打开源文件时则在浏览器里渲染。
 (function () {
-  const page = document.body.dataset.page;
+  let page = document.body.dataset.page;
   const R = LizhiRender.create({ ALBUMS, PLACES, TIMELINE });
   const { esc, pad2 } = R;
   const $ = (s, r = document) => r.querySelector(s);
@@ -30,7 +30,7 @@
 
   // ---------- 专辑详情弹层 ----------
   let sheetList = [], sheetIdx = 0;
-  const useHash = page === "albums";
+  const useHash = () => page === "albums";
   function openAlbum(a, list) {
     if (!a) return;
     if (list) sheetList = list;
@@ -49,6 +49,7 @@
         : `<p class="tbd">曲目待补充。</p>`;
     const many = sheetList.length > 1;
     dlg.innerHTML = `
+    <div class="sheet-card">
       <div class="sheet-bar">
         <span class="sheet-count">${many ? `${pad2(sheetIdx + 1)} / ${pad2(sheetList.length)}` : ""}</span>
         <span>
@@ -65,16 +66,19 @@
           ${a.note ? `<p class="note">${esc(a.note)}</p>` : ""}
           ${tracks}
         </div>
-      </div>`;
+      </div>
+    </div>`;
     $(".close", dlg).onclick = closeSheet;
     $$("[data-step]", dlg).forEach((b) => (b.onclick = () => step(+b.dataset.step)));
     if (playable) {
-      $(".play-all", dlg).onclick = () => P.playAlbum(a.id);
-      $$(".trk", dlg).forEach((b) => (b.onclick = () => P.playAlbum(a.id, +b.dataset.n)));
+      // 从弹层里点播放就关掉弹层：弹层是 modal，盖在顶层，底部播放栏会被它挡住，不关就看不到进度条
+      $(".play-all", dlg).onclick = () => { P.playAlbum(a.id); closeSheet(); };
+      $$(".trk", dlg).forEach((b) => (b.onclick = () => { P.playAlbum(a.id, +b.dataset.n); closeSheet(); }));
     }
     dlg.dataset.album = a.id;
     markPlaying();
-    if (useHash) history.replaceState(null, "", "#" + a.id);
+    if (useHash()) history.replaceState(null, "", "#" + a.id);
+    document.body.style.overflow = "hidden";
     if (!dlg.open) { dlg.showModal(); $("#sheet-title", dlg).focus(); }
     dlg.scrollTop = 0;
     $(".sheet-body", dlg).scrollTop = 0;
@@ -83,7 +87,28 @@
     const dlg = document.createElement("dialog");
     dlg.id = "sheet"; dlg.className = "sheet";
     dlg.setAttribute("aria-labelledby", "sheet-title");
-    dlg.addEventListener("click", (e) => { if (e.target === dlg) closeSheet(); });
+    dlg.addEventListener("click", (e) => {
+      if (e.target !== dlg) return;
+      // 弹层是 modal：底部固定播放栏在顶层之下，点它会先打到弹层上。
+      // 直接转发点击行不通：modal 在顶层，elementFromPoint 拿不到底下的控件。
+      // 所以先关弹层，等它关掉后再把这次点击还给底下的控件——点一次“词”，歌词面板就打开。
+      const p = document.querySelector(".player");
+      if (p && !p.hidden) {
+        const inRect = (r) => r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+        const panel = p.querySelector(".lyrics-panel");
+        if (inRect(p.getBoundingClientRect()) || (panel && !panel.hidden && inRect(panel.getBoundingClientRect()))) {
+          const x = e.clientX, y = e.clientY;
+          closeSheet();
+          setTimeout(() => {
+            const el = document.elementFromPoint(x, y);
+            // 封面/歌名不转发：它们会重新打开弹层，关了又开会闪一下
+            if (el && !el.closest(".p-cover, .p-title, .p-album")) el.click();
+          }, 200);
+          return;
+        }
+      }
+      closeSheet();
+    });
     dlg.addEventListener("cancel", (e) => { e.preventDefault(); closeSheet(); });
     dlg.addEventListener("keydown", (e) => {
       if (e.key === "ArrowRight") step(1);
@@ -107,6 +132,13 @@
     $$(".trk", dlg).forEach((b) => b.classList.toggle("playing", !!c && dlg.dataset.album === c.albumId && +b.dataset.n === c.n));
   }
   document.addEventListener("lizhi:track", markPlaying);
+  // 点播放条的封面/歌名/专辑名，打开正在播的那张专辑的弹层
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".p-cover, .p-title, .p-album")) return;
+    const P = window.LizhiPlayer;
+    const c = P && P.current();
+    if (c) openAlbum(byId(c.albumId), [c.albumId]);
+  });
   // 清单晚于弹层加载完成时，刷新已打开的弹层
   document.addEventListener("lizhi:player-ready", () => {
     const dlg = $("#sheet");
@@ -116,8 +148,8 @@
     const dlg = $("#sheet");
     if (!dlg || !dlg.open || dlg.classList.contains("closing")) return;
     dlg.classList.add("closing");
-    setTimeout(() => { dlg.close(); dlg.classList.remove("closing"); }, 170);
-    if (useHash && location.hash) history.replaceState(null, "", location.pathname + location.search);
+    setTimeout(() => { dlg.close(); dlg.classList.remove("closing"); document.body.style.overflow = ""; }, 170);
+    if (useHash() && location.hash) history.replaceState(null, "", location.pathname + location.search);
     const back = $(`.album[data-id="${sheetList[sheetIdx]}"]`);
     if (back) back.focus({ preventScroll: true });
   }
@@ -134,9 +166,21 @@
       if (el && root.contains(el)) openAlbum(byId(el.dataset.id), $$(".album", root).map((x) => x.dataset.id));
     });
   }
+  // 从地址栏 #专辑 id 打开弹层（唱片页）；hashchange 全站只绑一次
+  let hashBound = false;
+  function openFromHash() {
+    const grid = $("#grid");
+    const a = byId(decodeURIComponent(location.hash.slice(1)));
+    if (a && grid) openAlbum(a, $$(".album", grid).map((el) => el.dataset.id));
+  }
+  function bindHashOnce() {
+    if (hashBound) return;
+    hashBound = true;
+    window.addEventListener("hashchange", () => { if (page === "albums") openFromHash(); });
+  }
 
   // ---------- 首页 ----------
-  if (page === "index") {
+  function initIndex() {
     const stack = fill("#hero-stack", R.heroStack() + '<span class="stamp">逼哥</span>');
     const caption = $("#hero-caption");
     const top = () => $$(".hs", stack).pop();
@@ -169,7 +213,7 @@
   }
 
   // ---------- 唱片页 ----------
-  if (page === "albums") {
+  function initAlbums() {
     const start = decodeURIComponent(location.hash.slice(1)) === "live" ? "现场专辑" : "全部";
     const bar = fill("#filters", R.filters(start));
     const grid = fill("#grid", R.albumsGrid(start));
@@ -185,13 +229,12 @@
       grid.innerHTML = R.albumsGrid(b.dataset.t);
       observe(grid);
     });
-    const openFromHash = () => openAlbum(byId(decodeURIComponent(location.hash.slice(1))), $$(".album", grid).map((el) => el.dataset.id));
+    bindHashOnce();
     openFromHash();
-    window.addEventListener("hashchange", openFromHash);
   }
 
   // ---------- 歌里的地方 ----------
-  if (page === "places") {
+  function initPlaces() {
     fill("#map", R.map());
     fill("#chips", R.chips(0));
     fill("#place", R.placeCard(0));
@@ -210,7 +253,7 @@
   }
 
   // ---------- 年表 ----------
-  if (page === "timeline") {
+  function initTimeline() {
     const tl = fill("#timeline", R.timeline());
     bindCards(tl);
     $$(".tl-row.redact", tl).forEach((r) => {
@@ -220,5 +263,55 @@
     });
   }
 
-  observe();
+  // ---------- 无刷新切页：换页不换播放器 ----------
+  function markNav() {
+    const href = { index: "index.html", albums: "albums.html", places: "places.html", timeline: "timeline.html" }[page];
+    $$(".nav a").forEach((a) => { if (a.getAttribute("href") === href) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+  }
+  function initPage() {
+    if (page === "index") initIndex();
+    else if (page === "albums") initAlbums();
+    else if (page === "places") initPlaces();
+    else if (page === "timeline") initTimeline();
+    observe();
+    markNav();
+  }
+  async function navigate(url, { push = true } = {}) {
+    let doc;
+    try {
+      const r = await fetch(url, { cache: "no-cache" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      doc = new DOMParser().parseFromString(await r.text(), "text/html");
+      if (!doc.querySelector("#masthead") || !doc.querySelector("#footer")) throw new Error("not a site page");
+    } catch (e) { location.href = url; return; }
+    // 只换页眉与页脚之间的正文：页眉（搜索框绑定在里面）、页脚、脚本、弹层、播放条都不动
+    const masthead = $("#masthead"), footer = $("#footer");
+    const range = [];
+    for (let n = masthead.nextSibling; n && n !== footer; n = n.nextSibling) range.push(n);
+    range.forEach((n) => n.remove());
+    const frag = document.createDocumentFragment();
+    const dm = doc.querySelector("#masthead"), df = doc.querySelector("#footer");
+    for (let n = dm.nextSibling; n && n !== df; n = n.nextSibling) frag.appendChild(document.importNode(n, true));
+    footer.before(frag);
+    document.title = doc.title;
+    page = doc.body.dataset.page;
+    document.body.dataset.page = page;
+    if (push) history.pushState(null, "", url);
+    window.scrollTo(0, 0);
+    initPage();
+  }
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a[href]");
+    if (!a || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    const href = a.getAttribute("href");
+    if (!href || a.target === "_blank" || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("http")) return;
+    const url = new URL(href, location.href);
+    if (url.origin !== location.origin || !/\\.html$/.test(url.pathname)) return;
+    if (url.pathname === location.pathname) return; // 同页锚点：走默认行为 + hashchange
+    e.preventDefault();
+    navigate(url.href);
+  });
+  window.addEventListener("popstate", () => { navigate(location.href, { push: false }); });
+
+  initPage();
 })();

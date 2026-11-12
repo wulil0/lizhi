@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCES = [
   ...readdirSync(root).filter((f) => f.endsWith(".html")),
-  "js/data.js", "js/render.js", "js/main.js", "js/player.js",
+  "js/data.js", "js/render.js", "js/main.js", "js/player.js", "js/search.js",
 ];
 const WEIGHTS = [400, 900];
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
