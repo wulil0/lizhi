@@ -1,67 +1,63 @@
-// 页面渲染：共用页眉页脚 + 按 <body data-page> 渲染各页内容。数据见 data.js。
+// 页面交互：按 <body data-page> 渲染 / 绑定各页内容。模板在 render.js，数据在 data.js。
+// 构建后的页面已经预渲染好（容器带 data-ssr），这里只补交互；直接打开源文件时则在浏览器里渲染。
 (function () {
   const page = document.body.dataset.page;
+  const R = LizhiRender.create({ ALBUMS, PLACES, TIMELINE });
+  const { esc, pad2 } = R;
   const $ = (s, r = document) => r.querySelector(s);
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const cover = (a) => `assets/covers/${a.id}.jpg`;
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const fill = (sel, html) => {
+    const el = $(sel);
+    if (el && !el.hasAttribute("data-ssr")) el.innerHTML = html;
+    return el;
+  };
+  const byId = (id) => ALBUMS.find((a) => a.id === id);
+  const touch = matchMedia("(hover: none)").matches;
 
-  // ---------- 页眉 / 页脚 ----------
-  const NAV = [["index", "首页", "index.html"], ["albums", "唱片", "albums.html"], ["places", "歌里的地方", "places.html"], ["timeline", "年表", "timeline.html"]];
-  $("#masthead").innerHTML = `
-    <div class="masthead"><div class="wrap">
-      <a class="logo" href="index.html">李志<small>LI ZHI · 南京</small></a>
-      <nav class="nav">${NAV.map(([k, t, h]) => `<a href="${h}"${k === page ? ' aria-current="page"' : ""}>${t}</a>`).join("")}</nav>
-    </div></div>
-    <div class="dateline"><div class="wrap"><span>非官方乐迷站 · 第 ${ALBUMS.length} 张唱片仍在播放</span><span>N 32°03′ E 118°47′</span></div></div>`;
-  $("#footer").innerHTML = `
-    <div class="wrap">
-      <span>非官方乐迷整理，与李志本人及其团队无关。封面版权归原作者所有。</span>
-      <span>资料来源：维基百科、乐迷整理的专辑表。发现错误？改 <code>js/data.js</code>。</span>
-    </div>`;
+  fill("#masthead", R.masthead(page));
+  fill("#footer", R.footer());
+
+  // ---------- 进场动画与触屏显色：全站共用两个观察器 ----------
+  const revealIO = new IntersectionObserver((es) => es.forEach((e) => {
+    if (e.isIntersecting) { e.target.classList.add("in"); revealIO.unobserve(e.target); }
+  }), { threshold: 0.1 });
+  // 触屏没有悬停：封面滚到屏幕中间那一段时自动显出原色
+  const vividIO = touch ? new IntersectionObserver((es) => es.forEach((e) => e.target.classList.toggle("vivid", e.isIntersecting)), { rootMargin: "-38% 0px -38% 0px" }) : null;
+  function observe(root = document) {
+    $$(".reveal:not(.in)", root).forEach((el) => revealIO.observe(el));
+    if (vividIO) $$(".album:not(.thumb)", root).forEach((el) => vividIO.observe(el));
+  }
 
   // ---------- 专辑详情弹层 ----------
-  // list：可翻页的专辑 id 顺序（当前页面上卡片的顺序）
   let sheetList = [], sheetIdx = 0;
   const useHash = page === "albums";
   function openAlbum(a, list) {
+    if (!a) return;
     if (list) sheetList = list;
     if (!sheetList.includes(a.id)) sheetList = [a.id];
     sheetIdx = sheetList.indexOf(a.id);
-    let dlg = $("#sheet");
-    if (!dlg) {
-      dlg = document.createElement("dialog");
-      dlg.id = "sheet"; dlg.className = "sheet";
-      dlg.setAttribute("aria-labelledby", "sheet-title");
-      dlg.addEventListener("click", (e) => { if (e.target === dlg) closeSheet(); });
-      dlg.addEventListener("cancel", (e) => { e.preventDefault(); closeSheet(); });
-      dlg.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowRight") step(1);
-        if (e.key === "ArrowLeft") step(-1);
-      });
-
-      document.body.appendChild(dlg);
-    }
+    const dlg = $("#sheet") || createSheet();
     // 播放器启用且曲目清单里有这张专辑时，用清单里的曲目（有序、可播放）
     const P = window.LizhiPlayer;
     const playable = P && P.hasAlbum(a.id) ? P.tracks(a.id) : null;
     const tracks = playable
-      ? `<button class="play-all" data-play="${a.id}">▶&#xFE0E; 播放整张</button>
+      ? `<button class="play-all">▶&#xFE0E; 播放整张</button>
          <div class="tl-label">曲目 · ${playable.length}</div>
-         <ol class="tracks playable">${playable.map((t) => `<li><button class="trk" data-n="${t.n}"><span class="n">${String(t.n).padStart(2, "0")}</span><span class="tt">${esc(t.title)}</span>${t.duration ? `<span class="du">${Math.floor(t.duration / 60)}:${String(t.duration % 60).padStart(2, "0")}</span>` : ""}</button></li>`).join("")}</ol>`
+         <ol class="tracks playable">${playable.map((t) => `<li><button class="trk" data-n="${t.n}"><span class="n">${pad2(t.n)}</span><span class="tt">${esc(t.title)}</span>${t.duration ? `<span class="du">${Math.floor(t.duration / 60)}:${pad2(t.duration % 60)}</span>` : ""}</button></li>`).join("")}</ol>`
       : a.tracks.length
         ? `<div class="tl-label">收录曲目 · ${a.tracks.length} · 按文件整理，非原专辑曲序</div><ul class="tracks">${a.tracks.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`
         : `<p class="tbd">曲目待补充。</p>`;
     const many = sheetList.length > 1;
     dlg.innerHTML = `
       <div class="sheet-bar">
-        <span class="sheet-count">${many ? `${String(sheetIdx + 1).padStart(2, "0")} / ${String(sheetList.length).padStart(2, "0")}` : ""}</span>
+        <span class="sheet-count">${many ? `${pad2(sheetIdx + 1)} / ${pad2(sheetList.length)}` : ""}</span>
         <span>
           ${many ? `<button class="nav-btn" data-step="-1" aria-label="上一张">←</button><button class="nav-btn" data-step="1" aria-label="下一张">→</button>` : ""}
           <button class="nav-btn close" aria-label="关闭">×</button>
         </span>
       </div>
       <div class="sheet-in">
-        <div class="sheet-cover"><img src="${cover(a)}" alt="《${esc(a.title)}》封面"><span class="stamp">${a.year}</span></div>
+        <div class="sheet-cover">${R.picture(a, { sizes: "(max-width: 860px) 100vw, 490px", lazy: false })}<span class="stamp">${a.year}</span></div>
         <div class="sheet-body">
           <div class="kicker">${esc(a.type)}${a.count ? " · " + esc(a.count) + " 首" : ""}</div>
           <h2 id="sheet-title" tabindex="-1">${esc(a.title)}</h2>
@@ -71,203 +67,158 @@
         </div>
       </div>`;
     $(".close", dlg).onclick = closeSheet;
-    dlg.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => step(+b.dataset.step)));
+    $$("[data-step]", dlg).forEach((b) => (b.onclick = () => step(+b.dataset.step)));
     if (playable) {
       $(".play-all", dlg).onclick = () => P.playAlbum(a.id);
-      dlg.querySelectorAll(".trk").forEach((b) => (b.onclick = () => P.playAlbum(a.id, +b.dataset.n)));
-      markPlaying();
+      $$(".trk", dlg).forEach((b) => (b.onclick = () => P.playAlbum(a.id, +b.dataset.n)));
     }
     dlg.dataset.album = a.id;
+    markPlaying();
     if (useHash) history.replaceState(null, "", "#" + a.id);
     if (!dlg.open) { dlg.showModal(); $("#sheet-title", dlg).focus(); }
+    dlg.scrollTop = 0;
     $(".sheet-body", dlg).scrollTop = 0;
+  }
+  function createSheet() {
+    const dlg = document.createElement("dialog");
+    dlg.id = "sheet"; dlg.className = "sheet";
+    dlg.setAttribute("aria-labelledby", "sheet-title");
+    dlg.addEventListener("click", (e) => { if (e.target === dlg) closeSheet(); });
+    dlg.addEventListener("cancel", (e) => { e.preventDefault(); closeSheet(); });
+    dlg.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight") step(1);
+      if (e.key === "ArrowLeft") step(-1);
+    });
+    // 手机上左右滑动翻专辑（竖向滚动不触发）
+    let sx = 0, sy = 0;
+    dlg.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+    dlg.addEventListener("touchend", (e) => {
+      const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+      if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8) step(dx < 0 ? 1 : -1);
+    }, { passive: true });
+    document.body.appendChild(dlg);
+    return dlg;
   }
   // 弹层里标出正在播放的那首
   function markPlaying() {
     const c = window.LizhiPlayer && window.LizhiPlayer.current();
     const dlg = $("#sheet");
     if (!dlg) return;
-    dlg.querySelectorAll(".trk").forEach((b) => b.classList.toggle("playing", !!c && dlg.dataset.album === c.albumId && +b.dataset.n === c.n));
+    $$(".trk", dlg).forEach((b) => b.classList.toggle("playing", !!c && dlg.dataset.album === c.albumId && +b.dataset.n === c.n));
   }
   document.addEventListener("lizhi:track", markPlaying);
   // 清单晚于弹层加载完成时，刷新已打开的弹层
   document.addEventListener("lizhi:player-ready", () => {
     const dlg = $("#sheet");
-    if (dlg && dlg.open) openAlbum(ALBUMS.find((a) => a.id === dlg.dataset.album));
+    if (dlg && dlg.open) openAlbum(byId(dlg.dataset.album));
   });
-
   function closeSheet() {
     const dlg = $("#sheet");
     if (!dlg || !dlg.open || dlg.classList.contains("closing")) return;
     dlg.classList.add("closing");
     setTimeout(() => { dlg.close(); dlg.classList.remove("closing"); }, 170);
     if (useHash && location.hash) history.replaceState(null, "", location.pathname + location.search);
-    const back = document.querySelector(`.album[data-id="${sheetList[sheetIdx]}"]`);
+    const back = $(`.album[data-id="${sheetList[sheetIdx]}"]`);
     if (back) back.focus({ preventScroll: true });
   }
   function step(d) {
     if (sheetList.length < 2) return;
-    const id = sheetList[(sheetIdx + d + sheetList.length) % sheetList.length];
-    openAlbum(ALBUMS.find((a) => a.id === id));
-    const btn = document.querySelector(`#sheet [data-step="${d}"]`);
+    openAlbum(byId(sheetList[(sheetIdx + d + sheetList.length) % sheetList.length]));
+    const btn = $(`#sheet [data-step="${d}"]`);
     if (btn) btn.focus();
   }
-
-  // i：在所在列表中的序号，用来错开出现时间
-  const card = (a, i = 0) => `
-    <button class="album reveal" data-id="${a.id}" style="--d:${(i % 10) * 45}ms">
-      <div class="cover"><img loading="lazy" src="${cover(a)}" alt="《${esc(a.title)}》封面"><span class="yr">${a.year}</span></div>
-      <h3>${esc(a.title)}</h3>
-      <div class="t">${esc(a.type)}</div>
-    </button>`;
-
+  // 卡片点击用事件委托，重新渲染后不用重新绑定
   function bindCards(root) {
-    const ids = [...root.querySelectorAll(".album")].map((el) => el.dataset.id);
-    root.querySelectorAll(".album").forEach((el) => {
-      el.onclick = () => openAlbum(ALBUMS.find((a) => a.id === el.dataset.id), ids);
+    root.addEventListener("click", (e) => {
+      const el = e.target.closest(".album");
+      if (el && root.contains(el)) openAlbum(byId(el.dataset.id), $$(".album", root).map((x) => x.dataset.id));
     });
   }
 
   // ---------- 首页 ----------
   if (page === "index") {
-    const picks = ["2006-shijie", "2005-fangao", "2004-jinji"].map((id) => ALBUMS.find((a) => a.id === id)).filter(Boolean);
-    // 封面叠放：点一下，最上面那张抽到最底下，换下一张
-    const pool = ["2004-jinji", "2005-fangao", "2006-shijie", "2009-nanjing", "2010-zhengzhou", "2011-f", "2014-1701", "2016-8", "2016-yingtian"];
-    const stack = $("#hero-stack");
-    let next = 3;
-    stack.classList.add("intro");
-    setTimeout(() => stack.classList.remove("intro"), 1400);
-    stack.insertAdjacentHTML("afterbegin", picks.map((a) => `<img src="${cover(a)}" alt="《${esc(a.title)}》封面">`).join(""));
+    const stack = fill("#hero-stack", R.heroStack() + '<span class="stamp">逼哥</span>');
     const caption = $("#hero-caption");
-    const setCaption = () => { const top = stack.querySelectorAll("img")[2]; caption.textContent = top.alt.replace("封面", ""); };
+    const top = () => $$(".hs", stack).pop();
+    const setCaption = () => { caption.textContent = `《${byId(top().dataset.id).title}》`; };
     setCaption();
+    // 入场动画每次会话只播一次（boot.js 读取这个标记）
+    try {
+      if (!sessionStorage.getItem("lizhi.intro")) {
+        stack.classList.add("intro");
+        setTimeout(() => stack.classList.remove("intro"), 1400);
+        sessionStorage.setItem("lizhi.intro", "1");
+      }
+    } catch (e) { /* 隐私模式下照常播放 */ }
+    // 封面叠放：点一下，最底下那张抽走，换一张当前没露出来的放到最上面
+    const pool = ALBUMS.filter((a) => a.type === "录音室专辑").map((a) => a.id);
+    let next = pool.indexOf(R.HERO_PICKS[R.HERO_PICKS.length - 1]) + 1;
     stack.addEventListener("click", () => {
-      const imgs = stack.querySelectorAll("img");
-      const id = pool[next++ % pool.length];
-      const a = ALBUMS.find((x) => x.id === id);
-      imgs[0].remove();
-      const img = document.createElement("img");
-      img.src = cover(a); img.alt = `《${a.title}》封面`;
-      stack.insertBefore(img, stack.querySelector(".stamp"));
+      const showing = $$(".hs", stack).map((p) => p.dataset.id);
+      let id;
+      do { id = pool[next++ % pool.length]; } while (showing.includes(id));
+      $(".hs", stack).remove();
+      stack.querySelector(".stamp").insertAdjacentHTML("beforebegin", R.heroCover(byId(id)));
       setCaption();
     });
     stack.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stack.click(); } });
-    const words = ALBUMS.map((a) => `<a href="albums.html#${a.id}">${esc(a.title)}</a>`);
-    $("#ticker").innerHTML = `<div>${[...words, ...words].join("")}</div>`;
-    const studio = ALBUMS.filter((a) => a.type === "录音室专辑");
-    $("#home-grid").innerHTML = studio.map(card).join("");
-    bindCards($("#home-grid"));
+    fill("#ticker", R.ticker());
+    bindCards(fill("#home-grid", R.homeGrid()));
     $("#n-albums").textContent = ALBUMS.length;
     $("#n-live").textContent = ALBUMS.filter((a) => a.type === "现场专辑").length;
   }
 
   // ---------- 唱片页 ----------
   if (page === "albums") {
-    const order = ["录音室专辑", "现场专辑", "精选集", "电影配乐单曲"];
-    const types = ["全部", ...order.filter((t) => ALBUMS.some((a) => a.type === t))];
-    const grid = $("#grid");
-    const byYear = (list) => [...list].sort((a, b) => a.year - b.year);
-    const render = (t) => {
-      const groups = t === "全部" ? order : [t];
-      grid.innerHTML = groups.map((g) => {
-        const list = byYear(ALBUMS.filter((a) => a.type === g));
-        if (!list.length) return "";
-        return `<div class="group-head"><h2>${g}</h2><span>${list.length} 张 · ${list[0].year}${list.length > 1 ? "—" + list[list.length - 1].year : ""}</span></div>` + list.map(card).join("");
-      }).join("");
-      bindCards(grid); observe();
-    };
-    $("#filters").innerHTML = types.map((t, i) => `<button aria-pressed="${i === 0}" data-t="${t}">${t}<small>${t === "全部" ? ALBUMS.length : ALBUMS.filter((a) => a.type === t).length}</small></button>`).join("");
-    $("#filters").onclick = (e) => {
+    const start = decodeURIComponent(location.hash.slice(1)) === "live" ? "现场专辑" : "全部";
+    const bar = fill("#filters", R.filters(start));
+    const grid = fill("#grid", R.albumsGrid(start));
+    // 预渲染的是“全部”，从 #live 进来时要换成现场专辑
+    if (start !== "全部" && grid.hasAttribute("data-ssr")) {
+      grid.innerHTML = R.albumsGrid(start);
+      $$("button", bar).forEach((x) => x.setAttribute("aria-pressed", x.dataset.t === start));
+    }
+    bindCards(grid);
+    bar.addEventListener("click", (e) => {
       const b = e.target.closest("button"); if (!b) return;
-      $("#filters").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
-      render(b.dataset.t);
-    };
-    const hash = decodeURIComponent(location.hash.slice(1));
-    const start = hash === "live" ? "现场专辑" : "全部";
-    $("#filters").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x.dataset.t === start));
-    render(start);
-    const openFromHash = () => {
-      const hit = ALBUMS.find((a) => a.id === decodeURIComponent(location.hash.slice(1)));
-      if (hit) openAlbum(hit, [...grid.querySelectorAll(".album")].map((el) => el.dataset.id));
-    };
+      $$("button", bar).forEach((x) => x.setAttribute("aria-pressed", x === b));
+      grid.innerHTML = R.albumsGrid(b.dataset.t);
+      observe(grid);
+    });
+    const openFromHash = () => openAlbum(byId(decodeURIComponent(location.hash.slice(1))), $$(".album", grid).map((el) => el.dataset.id));
     openFromHash();
     window.addEventListener("hashchange", openFromHash);
   }
 
   // ---------- 歌里的地方 ----------
   if (page === "places") {
-    const W = 800, H = 640, box = { lng: [84, 124], lat: [27, 50] };
-    const x = (lng) => ((lng - box.lng[0]) / (box.lng[1] - box.lng[0])) * W;
-    const y = (lat) => H - ((lat - box.lat[0]) / (box.lat[1] - box.lat[0])) * H;
-    // 华东放大插图：南京、金坛、杭州、义乌挤在一起，单独放大
-    const zoom = { lng: [117.4, 121.4], lat: [28.8, 32.8] }, ib = { x: 40, y: 340, w: 280, h: 280 };
-    const inZoom = (p) => p.lng > zoom.lng[0] && p.lng < zoom.lng[1] && p.lat > zoom.lat[0] && p.lat < zoom.lat[1];
-    const zx = (lng) => ib.x + ((lng - zoom.lng[0]) / (zoom.lng[1] - zoom.lng[0])) * ib.w;
-    const zy = (lat) => ib.y + ib.h - ((lat - zoom.lat[0]) / (zoom.lat[1] - zoom.lat[0])) * ib.h;
-    const home = PLACES[0];
-    // 路线：可见的虚线被一条逐渐描出的遮罩路径“画”出来
-    let k = 0;
-    const route = (i, d) => `<mask id="rm${i}" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><path class="draw" d="${d}" pathLength="1" style="--d:${200 + k++ * 90}ms"/></mask><path class="route" data-i="${i}" d="${d}" mask="url(#rm${i})"/>`;
-    const routes = PLACES.map((p, i) => [p, i]).filter(([p, i]) => i > 0 && !inZoom(p)).map(([p, i]) => {
-      const x1 = x(home.lng), y1 = y(home.lat), x2 = x(p.lng), y2 = y(p.lat);
-      const mx = (x1 + x2) / 2, my = Math.min(y1, y2) - 40;
-      return route(i, `M${x1},${y1} Q${mx},${my} ${x2},${y2}`);
-    }).join("");
-    const pin = (p, i, px, py, label, left) => `<g class="pin${i === 0 ? " home" : ""}" data-i="${i}" tabindex="0" role="button" aria-label="${esc(p.city)}" style="--d:${i === 0 ? 0 : 300 + i * 70}ms">
-        <circle class="hit" cx="${px}" cy="${py}" r="16"/>
-        <circle class="dot" cx="${px}" cy="${py}" r="${i === 0 ? 7 : 5}"/>
-        ${label ? `<text x="${px + (left ? -12 : 12)}" y="${py + 5}" text-anchor="${left ? "end" : "start"}">${esc(p.city)}</text>` : ""}</g>`;
-    const pins = PLACES.map((p, i) => inZoom(p)
-      ? `<circle class="mini" cx="${x(p.lng)}" cy="${y(p.lat)}" r="3"/>`
-      : pin(p, i, x(p.lng), y(p.lat), true, p.side ? p.side === "l" : p.lng > 120)).join("");
-    const zr = { x: x(zoom.lng[0]), y: y(zoom.lat[1]), w: x(zoom.lng[1]) - x(zoom.lng[0]), h: y(zoom.lat[0]) - y(zoom.lat[1]) };
-    const inset = `
-      <rect class="zoom-box" x="${zr.x}" y="${zr.y}" width="${zr.w}" height="${zr.h}"/>
-      <path class="zoom-link" d="M${zr.x},${zr.y + zr.h} L${ib.x + ib.w},${ib.y + ib.h}"/>
-      <rect class="inset" x="${ib.x}" y="${ib.y}" width="${ib.w}" height="${ib.h}"/>
-      <text class="inset-label" x="${ib.x + ib.w - 10}" y="${ib.y + ib.h - 12}" text-anchor="end">华东 · 放大</text>
-      ${PLACES.map((p, i) => [p, i]).filter(([p, i]) => i > 0 && inZoom(p)).map(([p, i]) => route(i, `M${zx(home.lng)},${zy(home.lat)} L${zx(p.lng)},${zy(p.lat)}`)).join("")}
-      ${PLACES.filter(inZoom).map((p) => pin(p, PLACES.indexOf(p), zx(p.lng), zy(p.lat), true, p.side ? p.side === "l" : false)).join("")}`;
-    $("#map").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="group" aria-label="李志歌中出现的地点">${routes}${inset}${pins}</svg>
-      <div class="legend">示意图 · 经纬度等距投影 · 虚线自南京出发</div>`;
-    $("#map").insertAdjacentHTML("afterend", `<div class="chips">${PLACES.map((p, i) => `<button data-i="${i}">${esc(p.city)}</button>`).join("")}</div>`);
+    fill("#map", R.map());
+    fill("#chips", R.chips(0));
+    fill("#place", R.placeCard(0));
     const show = (i) => {
-      const p = PLACES[i];
-      $("#place").innerHTML = `<div class="kicker">${p.lat.toFixed(2)}°N · ${p.lng.toFixed(2)}°E</div>
-        <h2>${esc(p.city)}</h2>${p.text ? `<p>${esc(p.text)}</p>` : ""}
-        <ul>${p.items.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>`;
-      document.querySelectorAll(".pin").forEach((g) => g.classList.toggle("on", +g.dataset.i === i));
-      document.querySelectorAll(".route").forEach((r) => r.classList.toggle("on", +r.dataset.i === i));
-      document.querySelectorAll(".chips button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.i === i));
+      $("#place").innerHTML = R.placeCard(i);
+      $$(".pin").forEach((g) => g.classList.toggle("on", +g.dataset.i === i));
+      $$(".route").forEach((r) => r.classList.toggle("on", +r.dataset.i === i));
+      $$("#chips button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.i === i));
     };
-    document.querySelectorAll(".pin").forEach((g) => {
-      const i = +g.dataset.i;
-      g.addEventListener("click", () => show(i));
-      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(i); } });
+    $("#map").addEventListener("click", (e) => { const g = e.target.closest(".pin"); if (g) show(+g.dataset.i); });
+    $("#map").addEventListener("keydown", (e) => {
+      const g = e.target.closest(".pin");
+      if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); show(+g.dataset.i); }
     });
-    document.querySelectorAll(".chips button").forEach((b) => b.addEventListener("click", () => show(+b.dataset.i)));
-    show(0);
+    $("#chips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) show(+b.dataset.i); });
   }
 
   // ---------- 年表 ----------
   if (page === "timeline") {
-    $("#timeline").innerHTML = TIMELINE.map((t) => `
-      <div class="tl-row reveal${t.redact ? " redact" : ""}">
-        <div class="y">${esc(t.year)}</div>
-        <div><p>${t.redact ? `<span>${esc(t.text)}</span>` : esc(t.text)}</p>${t.redact ? `<div class="hint">（指上来或点一下）</div>` : ""}</div>
-        <div class="tl-covers">${ALBUMS.filter((a) => String(a.year) === t.year).map((a) => `<button class="album thumb" data-id="${a.id}" title="${esc(a.title)}"><img loading="lazy" src="${cover(a)}" alt="《${esc(a.title)}》封面"></button>`).join("")}</div>
-      </div>`).join("");
-    bindCards($("#timeline"));
-    document.querySelectorAll(".tl-row.redact").forEach((r) => {
-      r.tabIndex = 0;
-      r.addEventListener("click", () => r.classList.toggle("open"));
+    const tl = fill("#timeline", R.timeline());
+    bindCards(tl);
+    $$(".tl-row.redact", tl).forEach((r) => {
+      const toggle = (e) => { if (!e.target.closest(".album")) r.classList.toggle("open"); };
+      r.addEventListener("click", toggle);
+      r.addEventListener("keydown", (e) => { if (e.target === r && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(e); } });
     });
   }
 
-  // ---------- 进场动画 ----------
-  function observe() {
-    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: 0.1 });
-    document.querySelectorAll(".reveal:not(.in)").forEach((el) => io.observe(el));
-  }
   observe();
 })();

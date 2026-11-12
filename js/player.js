@@ -7,6 +7,12 @@
 
   const MIME = { flac: "audio/flac", mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", ogg: "audio/ogg", opus: "audio/ogg; codecs=opus", wav: "audio/wav" };
   const STATE_KEY = "lizhi.player.state";
+  const PREFER_KEY = "lizhi.player.prefer";   // 用户在播放条上选的音质（flac / mp3）
+  const VOLUME_KEY = "lizhi.player.volume";
+  const store = {
+    get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* 隐私模式 */ } },
+  };
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const fmtTime = (t) => (isFinite(t) ? `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}` : "0:00");
 
@@ -41,21 +47,28 @@
   let lyricIdx = -1;
   let tried = [];        // 当前曲目已尝试失败的格式
   let pendingSeek = 0;
+  let lastSaved = -1;
   const audio = new Audio();
   audio.preload = "metadata";
+  const vol = parseFloat(store.get(VOLUME_KEY));
+  if (vol >= 0 && vol <= 1) audio.volume = vol;
 
   const album = (id) => (typeof ALBUMS !== "undefined" ? ALBUMS : []).find((a) => a.id === id) || { id, title: id };
   const cur = () => queue[idx];
 
+  const filesOf = (audioField) => (typeof audioField === "string" ? { [audioField.split(".").pop().toLowerCase()]: audioField } : audioField || {});
+  const playable = (f) => !MIME[f] || !!audio.canPlayType(MIME[f]);
+  // 这首歌里浏览器能播的格式，按优先顺序排列（用户手动选过的音质排最前）
+  function formatsOf(audioField) {
+    const files = filesOf(audioField);
+    const user = store.get(PREFER_KEY);
+    const order = [...new Set([...(user ? [user] : []), ...(CFG.prefer || []), ...Object.keys(files)])];
+    return order.filter((f) => files[f] && playable(f));
+  }
   // 选出浏览器能播、且没失败过的格式
   function pickFormat(audioField) {
-    const files = typeof audioField === "string" ? { [audioField.split(".").pop().toLowerCase()]: audioField } : audioField || {};
-    const order = [...(CFG.prefer || []), ...Object.keys(files)];
-    for (const f of order) {
-      if (!files[f] || tried.includes(f)) continue;
-      if (!MIME[f] || audio.canPlayType(MIME[f])) return { fmt: f, key: files[f] };
-    }
-    return null;
+    const f = formatsOf(audioField).find((x) => !tried.includes(x));
+    return f ? { fmt: f, key: filesOf(audioField)[f] } : null;
   }
 
   async function load(i, { autoplay = true, at = 0 } = {}) {
@@ -77,7 +90,7 @@
   async function loadAudio(autoplay) {
     const pick = pickFormat(cur().track.audio);
     if (!pick) { ui.error("这首歌没有当前浏览器能播放的格式"); return; }
-    ui.setFormat(pick.fmt);
+    ui.setFormat(pick.fmt, formatsOf(cur().track.audio).filter((f) => !tried.includes(f)).length > 1);
     audio.dataset.fmt = pick.fmt;
     audio.src = await source.url(pick.key);
     if (autoplay) audio.play().catch(() => ui.setPlaying(false));
@@ -91,10 +104,16 @@
     ui.setTime(audio.currentTime, audio.duration);
     const li = lineAt(lyrics, audio.currentTime);
     if (li !== lyricIdx) { lyricIdx = li; ui.setLyricLine(li); }
-    if (Math.floor(audio.currentTime) % 5 === 0) saveState();
+    const sec = Math.floor(audio.currentTime);
+    if (sec % 5 === 0 && sec !== lastSaved) { lastSaved = sec; saveState(); }
   });
   audio.addEventListener("play", () => ui.setPlaying(true));
-  audio.addEventListener("pause", () => { ui.setPlaying(false); saveState(); });
+  audio.addEventListener("pause", () => { ui.setPlaying(false); ui.setBuffering(false); saveState(); });
+  // 缓冲提示：FLAC 文件大，开始播放或拖动后可能要等一会儿
+  audio.addEventListener("waiting", () => ui.setBuffering(true));
+  audio.addEventListener("seeking", () => { if (!audio.paused) ui.setBuffering(true); });
+  ["playing", "canplay", "seeked", "error", "emptied"].forEach((ev) => audio.addEventListener(ev, () => ui.setBuffering(false)));
+  audio.addEventListener("volumechange", () => { store.set(VOLUME_KEY, String(audio.volume)); ui.setVolume(audio.volume); });
   audio.addEventListener("ended", () => { if (idx < queue.length - 1) load(idx + 1); else ui.setPlaying(false); });
   audio.addEventListener("error", () => {
     if (!cur()) return;
@@ -115,7 +134,10 @@
     const a = album(cur().albumId);
     navigator.mediaSession.metadata = new MediaMetadata({
       title: cur().track.title, artist: "李志", album: a.title,
-      artwork: [{ src: new URL(`assets/covers/${a.id}.jpg`, location.href).href, sizes: "800x800", type: "image/jpeg" }],
+      artwork: [
+        { src: new URL(`assets/covers/400/${a.id}.webp`, location.href).href, sizes: "400x400", type: "image/webp" },
+        { src: new URL(`assets/covers/${a.id}.jpg`, location.href).href, sizes: "800x800", type: "image/jpeg" },
+      ],
     });
   }
   if ("mediaSession" in navigator) {
@@ -136,26 +158,29 @@
       <section class="lyrics-panel" hidden aria-label="歌词"><div class="lp-head"><span class="kicker">歌词</span><span class="lp-title"></span></div><ol class="lp-lines"></ol></section>
       <div class="player-bar">
         <img class="p-cover" alt="">
-        <div class="p-meta"><div class="p-title"></div><div class="p-sub"><span class="p-album"></span><span class="p-fmt"></span></div></div>
+        <div class="p-meta"><div class="p-title"></div><div class="p-sub"><span class="p-album"></span><button class="p-fmt" data-act="quality" disabled></button><span class="p-buf" aria-live="polite"></span></div></div>
         <div class="p-ctrl">
           <button class="p-btn" data-act="prev" aria-label="上一首">⏮&#xFE0E;</button>
           <button class="p-btn p-play" data-act="toggle" aria-label="播放">▶&#xFE0E;</button>
           <button class="p-btn" data-act="next" aria-label="下一首">⏭&#xFE0E;</button>
         </div>
         <div class="p-progress"><span class="p-time">0:00</span><input class="p-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度"><span class="p-dur">0:00</span></div>
-        <button class="p-btn p-lyr" data-act="lyrics" aria-pressed="false" aria-label="歌词">词</button>
+        <label class="p-vol" title="音量"><span aria-hidden="true">音量</span><input type="range" min="0" max="100" step="1" aria-label="音量"></label>
+        <button class="p-btn p-lyr" data-act="lyrics" aria-pressed="false" aria-label="歌词（快捷键 L）">词</button>
         <button class="p-btn p-x" data-act="close" aria-label="关闭播放器">×</button>
       </div>`;
     document.body.appendChild(root);
     const $ = (s) => root.querySelector(s);
-    const seek = $(".p-seek"), panel = $(".lyrics-panel"), lines = $(".lp-lines");
+    const seek = $(".p-seek"), panel = $(".lyrics-panel"), lines = $(".lp-lines"), volume = $(".p-vol input");
+    volume.value = Math.round(audio.volume * 100);
+    volume.addEventListener("input", () => { audio.volume = volume.value / 100; });
     let dragging = false;
 
     root.addEventListener("click", (e) => {
       const b = e.target.closest("[data-act]");
-      if (b) ({ prev: api.prev, next: api.next, toggle: api.toggle, lyrics: toggleLyrics, close: api.stop })[b.dataset.act]();
-      const li = e.target.closest(".lp-lines li[data-t]");
-      if (li) { audio.currentTime = +li.dataset.t; if (audio.paused) audio.play(); }
+      if (b) ({ prev: api.prev, next: api.next, toggle: api.toggle, lyrics: toggleLyrics, close: api.stop, quality: api.switchQuality })[b.dataset.act]();
+      const line = e.target.closest(".lp-lines [data-t]");
+      if (line) { audio.currentTime = +line.dataset.t; if (audio.paused) audio.play(); }
     });
     seek.addEventListener("input", () => { dragging = true; $(".p-time").textContent = fmtTime((seek.value / 1000) * (audio.duration || 0)); });
     seek.addEventListener("change", () => { dragging = false; if (audio.duration) audio.currentTime = (seek.value / 1000) * audio.duration; });
@@ -177,14 +202,24 @@
       show() { if (root.hidden) { root.hidden = false; document.body.classList.add("has-player"); } },
       hide() { root.hidden = true; document.body.classList.remove("has-player"); toggleLyrics(false); },
       setTrack(a, t) {
-        $(".p-cover").src = `assets/covers/${a.id}.jpg`;
+        $(".p-cover").src = `assets/covers/400/${a.id}.webp`;
         $(".p-title").textContent = t.title;
         $(".p-album").textContent = `《${a.title}》`;
         $(".lp-title").textContent = t.title;
         $(".p-sub").classList.remove("err");
         root.classList.remove("swap"); void root.offsetWidth; root.classList.add("swap");
       },
-      setFormat(f) { $(".p-fmt").textContent = f.toUpperCase(); $(".p-fmt").classList.toggle("lossless", f === "flac" || f === "wav"); },
+      // canSwitch：这首有不止一种能播的格式时，标签可以点击切换音质
+      setFormat(f, canSwitch) {
+        const b = $(".p-fmt");
+        b.textContent = f.toUpperCase();
+        b.classList.toggle("lossless", f === "flac" || f === "wav");
+        b.disabled = !canSwitch;
+        b.title = canSwitch ? "点击切换音质" : "";
+        b.setAttribute("aria-label", `当前音质 ${f.toUpperCase()}${canSwitch ? "，点击切换" : ""}`);
+      },
+      setBuffering(on) { root.classList.toggle("buffering", on); $(".p-buf").textContent = on ? "缓冲中" : ""; },
+      setVolume(v) { volume.value = Math.round(v * 100); },
       setPlaying(on) { const b = $(".p-play"); b.innerHTML = on ? "❚❚" : "▶&#xFE0E;"; b.setAttribute("aria-label", on ? "暂停" : "播放"); root.classList.toggle("playing", on); },
       setTime(t, d) {
         if (!dragging) { seek.value = d ? Math.round((t / d) * 1000) : 0; $(".p-time").textContent = fmtTime(t); }
@@ -194,12 +229,13 @@
       setLyrics(ls) {
         if (ls === null) { lines.innerHTML = `<li class="lp-empty">歌词加载中……</li>`; return; }
         lines.innerHTML = ls.length
-          ? ls.map((l) => (l.text ? `<li data-t="${l.t}">${esc(l.text)}</li>` : `<li data-t="${l.t}" class="gap">· · ·</li>`)).join("")
+          ? ls.map((l) => (l.text ? `<li><button data-t="${l.t}">${esc(l.text)}</button></li>` : `<li class="gap"><button data-t="${l.t}" aria-label="间奏">· · ·</button></li>`)).join("")
           : `<li class="lp-empty">这首没有歌词文件。</li>`;
         lines.scrollTop = 0;
       },
       setLyricLine,
-      error(msg) { $(".p-sub").classList.add("err"); $(".p-fmt").textContent = msg; ui.setPlaying(false); },
+      error(msg) { $(".p-sub").classList.add("err"); $(".p-buf").textContent = msg; ui.setPlaying(false); ui.setBuffering(false); },
+      toggleLyrics,
     };
   })();
 
@@ -223,10 +259,31 @@
     toggle() { if (!cur()) return; audio.paused ? audio.play() : audio.pause(); },
     next() { if (idx < queue.length - 1) load(idx + 1); },
     prev() { if (audio.currentTime > 3 || idx === 0) audio.currentTime = 0; else load(idx - 1); },
-    seek(sec) { audio.currentTime = sec; },
+    seek(sec) { audio.currentTime = Math.max(0, Math.min(sec, audio.duration || sec)); },
+    // 在这首歌的可用格式之间切换（如 FLAC ⇄ MP3），保留进度和播放状态，并记住选择
+    switchQuality() {
+      if (!cur()) return;
+      const fs = formatsOf(cur().track.audio).filter((f) => f === audio.dataset.fmt || !tried.includes(f));
+      if (fs.length < 2) return;
+      const nextFmt = fs[(fs.indexOf(audio.dataset.fmt) + 1) % fs.length];
+      store.set(PREFER_KEY, nextFmt);
+      pendingSeek = audio.currentTime;
+      loadAudio(!audio.paused);
+    },
     stop() { audio.pause(); audio.removeAttribute("src"); audio.load(); queue = []; idx = -1; ui.hide(); try { sessionStorage.removeItem(STATE_KEY); } catch (e) { /* 忽略 */ } document.dispatchEvent(new CustomEvent("lizhi:track", { detail: null })); },
   };
   window.LizhiPlayer = api;
+
+  // 键盘快捷键（播放条出现后生效；焦点在输入框、按钮上或弹层打开时不抢按键）
+  document.addEventListener("keydown", (e) => {
+    if (!cur() || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest("input, textarea, select, button, a, [role=button], dialog[open]") || document.querySelector("dialog[open]")) return;
+    const k = e.key;
+    if (k === " " || k === "k" || k === "K") { e.preventDefault(); api.toggle(); }
+    else if (k === "ArrowLeft") { e.preventDefault(); e.shiftKey ? api.prev() : api.seek(audio.currentTime - 5); }
+    else if (k === "ArrowRight") { e.preventDefault(); e.shiftKey ? api.next() : api.seek(audio.currentTime + 5); }
+    else if (k === "l" || k === "L") ui.toggleLyrics();
+  });
 
   // 读取曲目清单；失败时播放器保持隐藏，不影响页面其他功能
   source.json(CFG.manifest || "manifest.json")

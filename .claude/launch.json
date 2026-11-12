@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "lizhi-site", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8765", "--directory", "."], "port": 8765 }
+    { "name": "lizhi-site", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8765", "--directory", "."], "port": 8765 },
+    { "name": "lizhi-dist", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8766", "--directory", "dist"], "port": 8766 }
   ]
 }
