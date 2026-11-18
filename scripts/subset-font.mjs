@@ -17,7 +17,12 @@ const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHT
 // 收集字符：所有非 ASCII 字符 + 全部可打印 ASCII
 const chars = new Set();
 for (let c = 32; c < 127; c++) chars.add(String.fromCharCode(c));
-for (const f of SOURCES) for (const ch of readFileSync(join(root, f), "utf8")) if (ch.codePointAt(0) > 127 && !/\s/.test(ch)) chars.add(ch);
+// JS 注释不显示在页面上，不收进子集（也免得 Google Fonts 请求地址超长：超长时它会忽略 text 参数）
+const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
+for (const f of SOURCES) {
+  const src = readFileSync(join(root, f), "utf8");
+  for (const ch of f.endsWith(".js") ? stripComments(src) : src) if (ch.codePointAt(0) > 127 && !/\s/.test(ch)) chars.add(ch);
+}
 // 排除不该用宋体渲染的符号（播放控件图标、变体选择符）
 for (const ch of "⏮⏭▶❚♪✕←→×︎️") chars.delete(ch);
 const text = [...chars].sort().join("");
@@ -27,6 +32,8 @@ const files = {};
 for (const w of WEIGHTS) {
   const cssUrl = `https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@${w}&display=swap&text=${encodeURIComponent(text)}`;
   const css = await (await fetch(cssUrl, { headers: { "User-Agent": UA } })).text();
+  // 正常只返回一个 @font-face；返回一堆分片说明 text 参数被忽略了（多半是地址太长），不能只取第一片
+  if ((css.match(/@font-face/g) || []).length !== 1) throw new Error(`${w} 字重没拿到单一子集（请求地址 ${cssUrl.length} 字符，可能超长）`);
   const m = css.match(/url\((https:[^)]+)\)\s*format\('woff2'\)/);
   if (!m) throw new Error(`没拿到 ${w} 字重的 woff2：\n${css.slice(0, 300)}`);
   const buf = Buffer.from(await (await fetch(m[1], { headers: { "User-Agent": UA } })).arrayBuffer());

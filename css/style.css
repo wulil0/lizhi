@@ -324,14 +324,13 @@ body.has-player { padding-bottom: 84px; }
 .lyrics-panel { position: absolute; right: 28px; bottom: calc(100% + 12px); width: min(440px, calc(100vw - 56px)); background: var(--paper); border: 1px solid var(--ink); box-shadow: 8px 10px 0 rgba(27,25,22,.12); animation: pop .3s cubic-bezier(.2,.7,.2,1); }
 .lp-head { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid var(--rule); }
 .lp-title { font-weight: 900; }
-.lp-lines { list-style: none; height: min(46vh, 380px); overflow-y: auto; padding: 48px 16px 140px; scrollbar-width: thin; mask-image: linear-gradient(transparent, #000 12%, #000 85%, transparent); }
-.lp-lines li { padding: 7px 0; font-size: 16px; line-height: 1.5; color: var(--ink-3); cursor: pointer; transition: color .3s, transform .3s; transform-origin: left center; }
+.lp-lines { /* 歌词来自 LRC，很多字不在站内字体子集里；整段用系统宋体，避免同一行里两种字形混排 */ font-family: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", "SimSun", serif; list-style: none; height: min(46vh, 380px); overflow-y: auto; padding: 48px 16px 140px; scrollbar-width: thin; mask-image: linear-gradient(transparent, #000 12%, #000 85%, transparent); }
+.lp-lines li { position: relative; padding: 7px 0; font-size: 16px; line-height: 1.5; color: var(--ink-3); cursor: pointer; transition: color .3s, transform .3s; transform-origin: left center; }
 @media (hover: hover) { .lp-lines li:hover { color: var(--ink-2); } }
 .lp-lines li.on { color: var(--ink); font-weight: 900; transform: scale(1.08); }
-.lp-lines li.on::before { content: "♪ "; color: var(--red); }
 .lp-lines li.gap { letter-spacing: .3em; }
-.lp-lines li.gap.on::before { content: none; }
-.lp-lines li.next::before { content: "♪ "; color: var(--red); display: inline-block; animation: note-bounce 1s ease-in-out infinite; }
+/* 前奏、间奏时提示下一句：♪ 放在行首左侧空白里，不占行，开唱后消失 */
+.lp-lines li.next::before { content: "♪"; color: var(--red); position: absolute; right: calc(100% + 3px); top: 7px; animation: note-bounce 1s ease-in-out infinite; }
 @keyframes note-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 .lp-lines .lp-empty { font-family: var(--hand); cursor: default; }
 .lp-lines .lp-note { font-family: var(--hand); cursor: default; color: var(--ink-2); }

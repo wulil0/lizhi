@@ -84,8 +84,10 @@ fs.writeFileSync(path.join(OUT, "robots.txt"), `User-agent: *\nAllow: /\nSitemap
 
 // ---------- 缺字检查 ----------
 // 页面上的字 + 数据里的字（弹层简介、曲目在运行时才显示），去掉标签后检查
+// JS 注释不显示在页面上，和 scripts/subset-font.mjs 一样跳过
+const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
 const have = new Set(fs.readFileSync(path.join(ROOT, "fonts/chars.txt"), "utf8"));
-const text = pageText.join("").replace(/<[^>]+>/g, "") + JSON.stringify(D) + read("js/main.js") + read("js/player.js") + read("js/search.js");
+const text = pageText.join("").replace(/<[^>]+>/g, "") + JSON.stringify(D) + ["js/main.js", "js/player.js", "js/search.js"].map((f) => stripComments(read(f))).join("");
 const ICONS = new Set("⏮⏭▶❚♪✕←→×︎️");
 const missing = [...new Set(text)].filter((c) => c.codePointAt(0) > 127 && !/\s/.test(c) && !ICONS.has(c) && !have.has(c));
 if (missing.length) console.warn(`⚠ 字体子集缺 ${missing.length} 个字：${missing.join("")}\n  请运行 node scripts/subset-font.mjs 重新生成字体。`);
